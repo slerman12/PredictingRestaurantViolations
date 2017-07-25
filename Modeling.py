@@ -1,5 +1,7 @@
 import pandas as pd
+import numpy as np
 from sklearn import preprocessing
+import datetime
 
 # Main method
 if __name__ == "__main__":
@@ -43,10 +45,10 @@ if __name__ == "__main__":
     # data = data.sort_values(["GP FACILITY ID", "INSPECTION ID", "VIOL VIOLATION STATUS", "VIOL VIOLATION CODE"])
     #
     # # Make CSV
-    # # data.to_csv("data/AllData.csv", index=False)
+    # # data.to_csv("data/all_data.csv", index=False)
     #
     # # Load data
-    # # data = pd.read_csv("data/AllData.csv", encoding="ISO-8859-1")
+    # # data = pd.read_csv("data/all_data.csv", encoding="ISO-8859-1")
     #
     # # Add Grade column
     # data.loc[data["DTA RESULT CODE"] == 31, "GRADE"] = "A"
@@ -55,10 +57,10 @@ if __name__ == "__main__":
     # data.loc[(data["DTA RESULT CODE"] == 86) | (data["DTA RESULT CODE"] == 87), "GRADE"] = "Closure"
     #
     # # Make CSV
-    # # data.to_csv("data/AllData.csv", index=False)
+    # # data.to_csv("data/all_data.csv", index=False)
     #
     # # Load data
-    # # data = pd.read_csv("data/AllData.csv", dtype={"GP RISK CATEGORY": str})
+    # # data = pd.read_csv("data/all_data.csv", dtype={"GP RISK CATEGORY": str})
     #
     # # Fix risk categories
     # data.loc[data["GP RISK CATEGORY"] == '1-Jan', "GP RISK CATEGORY"] = 0
@@ -71,10 +73,10 @@ if __name__ == "__main__":
     # data.loc[data["GP RISK CATEGORY"] == '3-Apr', "GP RISK CATEGORY"] = 7
     #
     # # Create CSV
-    # # data.to_csv("data/AllData.csv", index=False)
+    # # data.to_csv("data/all_data.csv", index=False)
     #
     # # Load data
-    # # data = pd.read_csv("data/CleanData.csv")
+    # # data = pd.read_csv("data/clean_data_old1.csv")
     #
     # # Initialize imminent health hazard feature
     # data["Imminent Health Hazard"] = 0
@@ -83,10 +85,10 @@ if __name__ == "__main__":
     # data.loc[data["VIOLATION NUMBER ON INSPECTION REPORT"] == "Imminent Health Hazard", "Imminent Health Hazard"] = 1
     #
     # # Create CSV
-    # # data.to_csv("data/CleanData.csv", index=False)
+    # # data.to_csv("data/clean_data_old1.csv", index=False)
     #
     # # Load data
-    # # data = pd.read_csv("data/CleanData.csv")
+    # # data = pd.read_csv("data/clean_data_old1.csv")
     #
     # # Numerically encode repeat violations
     # data.loc[data["VIOL REPEAT VIOLATION"] == "Y", "VIOL REPEAT VIOLATION"] = 1
@@ -97,10 +99,10 @@ if __name__ == "__main__":
     # data.loc[data["GP IRREGULAR HOURS"] == "N", "GP IRREGULAR HOURS"] = 0
     #
     # # Create CSV
-    # # data.to_csv("data/CleanData.csv", index=False)
+    # # data.to_csv("data/clean_data_old1.csv", index=False)
     #
     # # Load data
-    # # clean_data = pd.read_csv("data/CleanData.csv")
+    # # clean_data = pd.read_csv("data/clean_data_old1.csv")
     # # raw_data = pd.read_csv("data/Las Vegas 3 Year Inspections.csv", encoding="ISO-8859-1")
     #
     # # Merge activity date back into dataset
@@ -135,7 +137,7 @@ if __name__ == "__main__":
     #                             'GP RISK CATEGORY': 'Risk Category', 'VIOL REPEAT VIOLATION': 'Repeat Violation'})
     #
     # # Create CSV
-    # data.to_csv("data/AllData.csv", index=False)
+    # data.to_csv("data/all_data.csv", index=False)
     #
     # # Sort data
     # data = data.sort_values(["Restaurant ID", "Inspection ID", "Date", "Violation Status", "Violation Code"])
@@ -154,7 +156,86 @@ if __name__ == "__main__":
     #      "Imminent Health Hazard", "Repeat Violation", "Demerit Total", "Grade"]]
     #
     # # Create CSV
-    # data.to_csv("data/CleanData.csv", index=False)
+    # data.to_csv("data/clean_data_old1.csv", index=False)
+    #
+    # # Load data
+    # # data = pd.read_csv("data/clean_data_old1.csv")
+    #
+    # # # Convert column to date time format
+    # data["Date"] = pd.to_datetime(data["Date"])
+    #
+    # # Add binary followup feature
+    # data["Followup"] = 0
+    # data.loc[data["Date"] != data.groupby(["Inspection ID"])["Date"].transform("min"), "Followup"] = 1
+    #
+    # # Rearrange columns
+    # data = data[
+    #     ['Restaurant ID', 'District', 'Risk Category', 'Square Footage', 'GP PE', 'Irregular Hours', 'Inspection ID',
+    #      'Followup', 'Date', 'DTA Service', 'Violation Status', 'Violation Code', 'Demerit Value', 'Violation Type',
+    #      'Imminent Health Hazard', 'Repeat Violation', 'Demerit Total', 'Grade']].rename(
+    #     columns={"GP PE": "Program Element"})
+    #
+    # # Alternative code for same thing - do not use!!!
+    # # data["Followup2"] = 0
+    # # data.loc[data["Date"] !=
+    # #          data.merge(data.groupby("Inspection ID", as_index=False).agg({"Date": "min"}).rename(
+    # #                  columns={"Date": "Min Inspection Date"}), on="Inspection ID")[
+    # #              "Min Inspection Date"], "Followup2"] = 1
+    #
+    # # Create CSV
+    # data.to_csv("data/clean_data_old2.csv", index=False)
+    #
+    # # Load data
+    # # data = pd.read_csv("data/clean_data_old2.csv", thousands=",")
+    #
+    # # District groups
+    # district_groups = {"NW": [28, 19, 53, 12, 14, 37, 26], "NE": [16, 17, 5, 1, 35, 30, 13, 2, 4, 64, 32],
+    #                    "C": [27, 24, 97, 91, 48, 96, 90, 41, 40, 94, 93, 52, 51, 92, 98, 95, 8, 3, 31, 18, 39, 55, 33,
+    #                          54, 56],
+    #                    "SW": [62, 6, 36, 43, 46, 42, 67, 47, 7, 63, 45, 65, 11, 44, 59, 66, 15, 49, 60, 61, 38],
+    #                    "SE": [10, 57, 58, 34, 9, 21, 20, 23, 22]}
+    #
+    # # Add group categories to data
+    # for key, value in district_groups.items():
+    #     data.loc[data["District"].isin(value), "District Group"] = key
+    #
+    # # Rearrange columns
+    # data = data[
+    #     ['Restaurant ID', 'District', 'District Group', 'Risk Category', 'Square Footage', 'Program Element',
+    #      'Irregular Hours', 'Inspection ID', 'Followup', 'Date', 'DTA Service', 'Violation Status', 'Violation Code',
+    #      'Demerit Value', 'Violation Type', 'Imminent Health Hazard', 'Repeat Violation', 'Demerit Total', 'Grade']]
+    #
+    # # Create CSV
+    # data.to_csv("data/clean_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
+    # 
+    # Load data
+    data = pd.read_csv("data/clean_data_24_July_2017.csv")
+
+    # Turn string mixed numbers into floats
+    data.loc[data["Square Footage"].notnull(), "Square Footage"].astype(str)
+    data["Square Footage"] = data["Square Footage"].str.replace("`", "").str.replace(",", "").astype(float)
+
+    # Create CSV
+    data.to_csv("data/clean_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
 
     # Load data
-    data = pd.read_csv("data/CleanData.csv")
+    data = pd.read_csv("data/clean_data_25_July_2017.csv")
+
+    # Numerically encode training data
+    for cur_value, new_value in {"A": 0, "B": 1, "C": 2, "Closure": 3}.items():
+        data.loc[data["Grade"] == cur_value, "Grade"] = new_value
+
+    # Create training data
+    # train = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID"]).agg(
+    #         {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max})[
+    #     ['District', 'District Group', 'Risk Category', 'Square Footage', 'Program Element', 'Irregular Hours',
+    #      'DTA Service']]
+    #TODO Print float and str dtypes in series to check which ones are str
+    train = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID"]).agg(
+            {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max, "District": "last",
+             "District Group": "last", "Irregular Hours": "last", "DTA Service": "last"})
+
+    print(train.index.get_level_values('Restaurant ID'))
+
+    # Create CSV
+    train.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")))
