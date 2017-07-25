@@ -212,8 +212,20 @@ if __name__ == "__main__":
     data = pd.read_csv("data/clean_data_24_July_2017.csv")
 
     # Turn string mixed numbers into floats
-    data.loc[data["Square Footage"].notnull(), "Square Footage"].astype(str)
-    data["Square Footage"] = data["Square Footage"].str.replace("`", "").str.replace(",", "").astype(float)
+    data.loc[data["Square Footage"].notnull(), "Square Footage"] = \
+        data["Square Footage"].astype(str).str.replace("`", "").str.replace(",", "").astype(float)
+
+    # Only use inspections with DTA Service 916, since the only other value 919 is not important
+    data = data[data["DTA Service"] == 916]
+
+    # Drop DTA Service field
+    data = data.drop("DTA Service", axis=1)
+
+    # Use 0 for null Irregular Hours
+    data["Irregular Hours"] = data["Irregular Hours"].fillna(0)
+
+    # Set unique district group for 0 districts
+    data.loc[data["District"] == 0, "District Group"] = "0"
 
     # Create CSV
     data.to_csv("data/clean_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
@@ -226,16 +238,13 @@ if __name__ == "__main__":
         data.loc[data["Grade"] == cur_value, "Grade"] = new_value
 
     # Create training data
-    # train = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID"]).agg(
-    #         {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max})[
-    #     ['District', 'District Group', 'Risk Category', 'Square Footage', 'Program Element', 'Irregular Hours',
-    #      'DTA Service']]
-    #TODO Print float and str dtypes in series to check which ones are str
     train = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID"]).agg(
             {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max, "District": "last",
-             "District Group": "last", "Irregular Hours": "last", "DTA Service": "last"})
+             "District Group": "last", "Irregular Hours": "last"})
 
-    print(train.index.get_level_values('Restaurant ID'))
+    # Rearrange columns
+    train = train[
+        ["District", "District Group", "Square Footage", "Risk Category", "Irregular Hours", "Grade"]]
 
     # Create CSV
     train.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")))
