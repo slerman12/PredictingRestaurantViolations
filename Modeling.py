@@ -3,7 +3,8 @@ import numpy as np
 from sklearn import preprocessing
 import datetime
 
-# Preprocess data
+
+# Pre-process data
 def all_data(create_file=False):
     # Las Vegas 3 Year Inspections
     all_restaurant_data = pd.read_csv("data/Las Vegas 3 Year Inspections.csv", encoding="ISO-8859-1")
@@ -66,12 +67,10 @@ def all_data(create_file=False):
     # Create CSV
     # data.to_csv("data/clean_data_old1.csv", index=False)
 
-    # Load data
-    # data = pd.read_csv("data/clean_data_old1.csv")
-
     # Numerically encode repeat violations
     data.loc[data["VIOL REPEAT VIOLATION"] == "Y", "VIOL REPEAT VIOLATION"] = 1
-    data.loc[(data["VIOL REPEAT VIOLATION"] == "N") | (data["VIOL REPEAT VIOLATION"].isnull()), "VIOL REPEAT VIOLATION"] = 0
+    data.loc[(data["VIOL REPEAT VIOLATION"] == "N") | (data["VIOL REPEAT VIOLATION"].isnull()),
+             "VIOL REPEAT VIOLATION"] = 0
 
     # Numerically encode irregular Hours
     data.loc[data["GP IRREGULAR HOURS"] == "Y", "GP IRREGULAR HOURS"] = 1
@@ -101,9 +100,6 @@ def all_data(create_file=False):
     # Create CSV
     # data.to_csv("data/CleanData2.csv", index=False)
 
-    # Load data
-    # clean_data = pd.read_csv("data/CleanData2.csv")
-
     # Sort data
     data = data.sort_values(["FACILITY ID", "INSPECTION ID", "DTA ACTIVITY DATE", "VIOL VIOLATION CODE"])
 
@@ -119,6 +115,7 @@ def all_data(create_file=False):
     if create_file:
         data.to_csv("data/all_data_{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
 
+    # Return data
     return data
 
 
@@ -143,9 +140,6 @@ def clean_data(data, create_file=False):
     # Create CSV
     # data.to_csv("data/clean_data_old1.csv", index=False)
 
-    # Load data
-    # data = pd.read_csv("data/clean_data_old1.csv")
-
     # # Convert column to date time format
     data["Date"] = pd.to_datetime(data["Date"])
 
@@ -160,18 +154,8 @@ def clean_data(data, create_file=False):
          'Imminent Health Hazard', 'Repeat Violation', 'Demerit Total', 'Grade']].rename(
             columns={"GP PE": "Program Element"})
 
-    # Alternative code for same thing - do not use!!!
-    # data["Followup2"] = 0
-    # data.loc[data["Date"] !=
-    #          data.merge(data.groupby("Inspection ID", as_index=False).agg({"Date": "min"}).rename(
-    #                  columns={"Date": "Min Inspection Date"}), on="Inspection ID")[
-    #              "Min Inspection Date"], "Followup2"] = 1
-
     # Create CSV
     # data.to_csv("data/clean_data_old2.csv", index=False)
-
-    # Load data
-    # data = pd.read_csv("data/clean_data_old2.csv", thousands=",")
 
     # District groups
     district_groups = {"NW": [28, 19, 53, 12, 14, 37, 26], "NE": [16, 17, 5, 1, 35, 30, 13, 2, 4, 64, 32],
@@ -210,33 +194,60 @@ def clean_data(data, create_file=False):
     if create_file:
         data.to_csv("data/clean_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
 
+    # Return data
     return data
 
 
 # Prepare data for modeling
-def training_data(data, create_file=False):
+def training_data(data, create_file=False, first_inspections_only=False):
     # Numerically encode training data
     for cur_value, new_value in {"A": 0, "B": 1, "C": 2, "Closure": 3}.items():
         data.loc[data["Grade"] == cur_value, "Grade"] = new_value
 
     # Create training data
-    data = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID"]).agg(
+    data = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID", "Program Element"]).max().groupby(
+            level=["Restaurant ID", "Inspection ID"]).agg(
             {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max, "District": "last",
              "District Group": "last", "Irregular Hours": "last"})
 
     # Rearrange columns
-    data = data[
-        ["District", "District Group", "Square Footage", "Risk Category", "Irregular Hours", "Grade"]]
+    data = data[["District", "District Group", "Square Footage", "Risk Category", "Irregular Hours", "Grade"]]
 
-    # Create CSV
+    # Reset index
+    data = data.reset_index()
+
     if create_file:
-        data.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")))
+        if not first_inspections_only:
+            # Create CSV
+            data.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
+        else:
+            # First inspections only
+            first_inspections = data.groupby(["Restaurant ID"]).agg({"Inspection ID": min})["Inspection ID"]
+            data = data[data["Inspection ID"].isin(first_inspections)]
 
+            # Create CSV
+            data.to_csv("data/training_data_first_inspections_only{}.csv".format(
+                    datetime.date.today().strftime("_%d_%B_%Y")), index=False)
+
+    # Return data
     return data
+
+
+# Statistics
+def stats(data):
+    return
+
+
+# Modeling
+def modeling(data):
+    return
 
 
 # Main method
 if __name__ == "__main__":
     # Load data
-    clean_data = pd.read_csv("data/clean_data_25_July_2017.csv")
-    training_data = pd.read_csv("data/training_data_25_July_2017.csv")
+    clean = pd.read_csv("data/clean_data_25_July_2017.csv")
+    train = pd.read_csv("data/training_data_25_July_2017.csv")
+
+    # First inspections only
+    training_data(clean, create_file=True, first_inspections_only=True)
