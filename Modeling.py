@@ -216,6 +216,9 @@ def training_data(data, create_file=False, first_inspections_only=False):
     # Reset index
     data = data.reset_index()
 
+    # Remove the small minority of restaurants that have null districts, null risk categories, or null grades
+    data = data[(data["District"].notnull()) & (data["Risk Category"].notnull()) & (data["Grade"].notnull())]
+
     # Create training data
     if not first_inspections_only:
         # Create CSV
@@ -253,8 +256,4 @@ if __name__ == "__main__":
     first_ins_train = pd.read_csv("data/training_data_first_inspections_only_25_July_2017.csv")
 
     # Run
-    first_ins_train = training_data(clean, create_file=False, first_inspections_only=True)
-
-    print(first_ins_train.isnull().sum())
-
-    print(first_ins_train.loc[first_ins_train["District Group"].isnull(), "District"].unique())
+    # first_ins_train = training_data(clean, create_file=False, first_inspections_only=True)
