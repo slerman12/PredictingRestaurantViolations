@@ -216,18 +216,20 @@ def training_data(data, create_file=False, first_inspections_only=False):
     # Reset index
     data = data.reset_index()
 
-    if create_file:
-        if not first_inspections_only:
-            # Create CSV
+    # Create training data
+    if not first_inspections_only:
+        # Create CSV
+        if create_file:
             data.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
-        else:
-            # First inspections only
-            first_inspections = data.groupby(["Restaurant ID"]).agg({"Inspection ID": min})["Inspection ID"]
-            data = data[data["Inspection ID"].isin(first_inspections)]
+    else:
+        # First inspections only
+        first_inspections = data.groupby(["Restaurant ID"]).agg({"Inspection ID": min})["Inspection ID"]
+        data = data[data["Inspection ID"].isin(first_inspections)]
 
-            # Create CSV
+        # Create CSV
+        if create_file:
             data.to_csv("data/training_data_first_inspections_only{}.csv".format(
-                    datetime.date.today().strftime("_%d_%B_%Y")), index=False)
+                datetime.date.today().strftime("_%d_%B_%Y")), index=False)
 
     # Return data
     return data
@@ -248,6 +250,11 @@ if __name__ == "__main__":
     # Load data
     clean = pd.read_csv("data/clean_data_25_July_2017.csv")
     train = pd.read_csv("data/training_data_25_July_2017.csv")
+    first_ins_train = pd.read_csv("data/training_data_first_inspections_only_25_July_2017.csv")
 
-    # First inspections only
-    training_data(clean, create_file=True, first_inspections_only=True)
+    # Run
+    first_ins_train = training_data(clean, create_file=False, first_inspections_only=True)
+
+    print(first_ins_train.isnull().sum())
+
+    print(first_ins_train.loc[first_ins_train["District Group"].isnull(), "District"].unique())
