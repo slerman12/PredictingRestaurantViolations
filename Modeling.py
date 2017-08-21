@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 from sklearn import preprocessing
 import datetime
+import matplotlib.pyplot as plt
 
 
 # Pre-process data
@@ -199,7 +200,7 @@ def clean_data(data, create_file=False):
 
 
 # Prepare data for modeling
-def training_data(data, create_file=False, first_inspections_only=False):
+def training_data(data, create_file=False):
     # Numerically encode training data
     for cur_value, new_value in {"A": 0, "B": 1, "C": 2, "Closure": 3}.items():
         data.loc[data["Grade"] == cur_value, "Grade"] = new_value
@@ -207,31 +208,40 @@ def training_data(data, create_file=False, first_inspections_only=False):
     # Create training data
     data = data[data["Followup"] == 0].groupby(["Restaurant ID", "Inspection ID", "Program Element"]).max().groupby(
             level=["Restaurant ID", "Inspection ID"]).agg(
-            {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max, "District": "last",
-             "District Group": "last", "Irregular Hours": "last"})
+            {"Square Footage": np.nansum, "Risk Category": np.max, "Grade": np.max, "Demerit Total": np.mean,
+             "District": "last", "District Group": "last", "Irregular Hours": "last"})
 
     # Rearrange columns
-    data = data[["District", "District Group", "Square Footage", "Risk Category", "Irregular Hours", "Grade"]]
+    data = data[["District", "District Group", "Square Footage", "Risk Category", "Irregular Hours", "Demerit Total",
+                 "Grade"]]
 
     # Reset index
     data = data.reset_index()
 
-    # Remove the small minority of restaurants that have null districts, null risk categories, or null grades
+    # Remove negligible minority of restaurants with null districts, risk categories, or grades
     data = data[(data["District"].notnull()) & (data["Risk Category"].notnull()) & (data["Grade"].notnull())]
 
+    # Add column for restaurant size categories (very small , … , very large) based on histogram of sizes
+    data.loc[(data["Square Footage"] < 100), "Size"] = 0
+    data.loc[(data["Square Footage"] > 100) & (data["Square Footage"] < 350), "Size"] = 1
+    data.loc[(data["Square Footage"] > 350) & (data["Square Footage"] < 1150), "Size"] = 2
+    data.loc[(data["Square Footage"] > 1150) & (data["Square Footage"] < 1950), "Size"] = 3
+    data.loc[(data["Square Footage"] > 1950), "Size"] = 4
+
+    # Rearrange columns
+    data = data[["Restaurant ID", "Inspection ID", "District", "District Group", "Square Footage", "Size",
+                 "Risk Category", "Irregular Hours", "Demerit Total", "Grade"]]
+
     # Create training data
-    if not first_inspections_only:
-        # Create CSV
-        if create_file:
-            data.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
-    else:
+    if create_file:
+        data.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
+
         # First inspections only
         first_inspections = data.groupby(["Restaurant ID"]).agg({"Inspection ID": min})["Inspection ID"]
         data = data[data["Inspection ID"].isin(first_inspections)]
 
         # Create CSV
-        if create_file:
-            data.to_csv("data/training_data_first_inspections_only{}.csv".format(
+        data.to_csv("data/training_data_first_inspections_only{}.csv".format(
                 datetime.date.today().strftime("_%d_%B_%Y")), index=False)
 
     # Return data
@@ -239,8 +249,58 @@ def training_data(data, create_file=False, first_inspections_only=False):
 
 
 # Statistics
-def stats(data):
-    return
+def stats(histogram=None, bar=None, show=True):
+    # Histogram
+    if histogram is not None:
+        # Plot info for each histogram
+        for plot_info in histogram["info"]:
+            # Plot histogram
+            plt.hist(plot_info["data"], bins="auto" if "bins" not in plot_info else plot_info["bins"],
+                     alpha=0.5 if "alpha" not in plot_info else plot_info["alpha"],
+                     label=None if "label" not in plot_info else plot_info["label"])
+
+        # Legend
+        if "legend" in histogram:
+            plt.legend(loc="upper right")
+
+        # Title
+        if "title" in histogram:
+            plt.title(histogram["title"])
+
+        # X label
+        if "xlabel" in histogram:
+            plt.xlabel(histogram["xlabel"])
+
+        # Y label
+        if "ylabel" in histogram:
+            plt.ylabel(histogram["ylabel"])
+
+        # Show plot
+        if show:
+            plt.show()
+
+    if bar is not None:
+        # x Positions
+        xpos = np.arange(len(bar["labels"]))
+
+        # Create bar graph
+        plt.bar(xpos, bar["yvalues"], align='center', alpha=0.5)
+        plt.xticks(xpos, bar["labels"])
+
+        # Title
+        if "title" in bar:
+            plt.title(bar["title"])
+
+        # X label
+        if "xlabel" in bar:
+            plt.xlabel(bar["xlabel"])
+
+        # Y label
+        if "ylabel" in bar:
+            plt.ylabel(bar["ylabel"])
+
+        if show:
+            plt.show()
 
 
 # Modeling
@@ -252,8 +312,32 @@ def modeling(data):
 if __name__ == "__main__":
     # Load data
     clean = pd.read_csv("data/clean_data_25_July_2017.csv")
-    train = pd.read_csv("data/training_data_25_July_2017.csv")
-    first_ins_train = pd.read_csv("data/training_data_first_inspections_only_25_July_2017.csv")
+    train = pd.read_csv("data/training_data_21_August_2017.csv")
+    first_ins_train = pd.read_csv("data/training_data_first_inspections_only_21_August_2017.csv")
+
+    # Compute histogram on restaurant sizes
+    # stats(histogram={"info": [{"data": first_ins_train["Square Footage"]}], "xlabel": "Restaurant Size (Square Ft.)",
+    #                  "ylabel": "Frequency", "title": "Restaurant Size Frequencies"})
 
     # Run
-    # first_ins_train = training_data(clean, create_file=False, first_inspections_only=True)
+    # first_ins_train = training_data(clean, create_file=True)
+
+    # Number of inspections per restaurant
+    # num_inspections = train.groupby(["Restaurant ID"]).agg({"Inspection ID": "count"})["Inspection ID"]
+
+    # Histogram of # of inspections per restaurant
+    # stats(histogram={"info": [{"data": num_inspections}], "xlabel": "Number of Inspections",
+    #                  "ylabel": "Frequency", "title": "Number of Inspections Per Restaurant"})
+
+    print("\nALL RESTAURANTS\n")
+    print(first_ins_train[["Demerit Total", "Grade"]].describe())
+
+    print("\nBY SIZE\n")
+    print(first_ins_train.groupby("Size")[["Demerit Total", "Grade"]].describe())
+
+    print("\nBY DISTRICT\n")
+    print(first_ins_train.groupby("District Group")[["Demerit Total", "Grade"]].describe())
+
+    # Frequency of violations
+    print("\nFREQUENCY OF VIOLATIONS\n")
+    print(clean.loc[clean["Violation Status"] == 2, "Violation Code"].value_counts())
