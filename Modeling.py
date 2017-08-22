@@ -1,8 +1,17 @@
+import warnings
 import pandas as pd
 import numpy as np
 from sklearn import preprocessing
+from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.model_selection import cross_val_score, train_test_split
 import datetime
 import matplotlib.pyplot as plt
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import GaussianNB
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.svm import SVC
 
 
 # Pre-process data
@@ -223,14 +232,25 @@ def training_data(data, create_file=False):
 
     # Add column for restaurant size categories (very small , … , very large) based on histogram of sizes
     data.loc[(data["Square Footage"] < 100), "Size"] = 0
-    data.loc[(data["Square Footage"] > 100) & (data["Square Footage"] < 350), "Size"] = 1
-    data.loc[(data["Square Footage"] > 350) & (data["Square Footage"] < 1150), "Size"] = 2
-    data.loc[(data["Square Footage"] > 1150) & (data["Square Footage"] < 1950), "Size"] = 3
-    data.loc[(data["Square Footage"] > 1950), "Size"] = 4
+    data.loc[(data["Square Footage"] >= 100) & (data["Square Footage"] < 350), "Size"] = 1
+    data.loc[(data["Square Footage"] >= 350) & (data["Square Footage"] < 1150), "Size"] = 2
+    data.loc[(data["Square Footage"] >= 1150) & (data["Square Footage"] < 1950), "Size"] = 3
+    data.loc[(data["Square Footage"] >= 1950), "Size"] = 4
 
     # Rearrange columns
     data = data[["Restaurant ID", "Inspection ID", "District", "District Group", "Square Footage", "Size",
                  "Risk Category", "Irregular Hours", "Demerit Total", "Grade"]]
+
+    # Numerically encode district groups
+    data.loc[data["District Group"] == "0", "District Group"] = 0
+    data.loc[data["District Group"] == "NW", "District Group"] = 1
+    data.loc[data["District Group"] == "NE", "District Group"] = 2
+    data.loc[data["District Group"] == "SW", "District Group"] = 3
+    data.loc[data["District Group"] == "SE", "District Group"] = 4
+    data.loc[data["District Group"] == "C", "District Group"] = 5
+
+    # Remove negligible minority of restaurants with null district groups
+    data = data[data["District Group"].notnull()]
 
     # Create training data
     if create_file:
@@ -304,8 +324,107 @@ def stats(histogram=None, bar=None, show=True):
 
 
 # Modeling
-def modeling(data):
-    return
+def modeling(data, predictors, target):
+    # Describe training data
+    print("\nTRAINING DATA DESCRIPTION\n")
+    print(data[predictors].describe())
+
+    # Describe target data
+    print("\nTARGET DESCRIPTION\n")
+    print(data[target].describe())
+    (print(data[target].value_counts()))
+
+    # Algorithms for model
+    algs = [
+        RandomForestClassifier(n_estimators=100, min_samples_split=2, min_samples_leaf=1, oob_score=True),
+        LogisticRegression(),
+        SVC(probability=True),
+        GaussianNB(),
+        KNeighborsClassifier(n_neighbors=25),
+        GradientBoostingClassifier(n_estimators=10, max_depth=3)]
+
+    # Algoirthm names
+    names = ["Random Forest", "Logistic Regression", "SVM", "Gaussian Naive Bayes", "kNN", "Gradient Boosting"]
+
+    for index, alg in enumerate(algs):
+        # Alg name
+        name = names[index]
+
+        # Fit alg
+        alg.fit(data[predictors], data[target])
+
+        # Base score
+        score = alg.score(data[predictors], data[target])
+        print("Base Score: {} [{}]".format(score, name))
+
+        # Out of bag estimate
+        if name == "Random Forest":
+            score = alg.oob_score_
+            print("OOB Score: {} [{}]".format(score, name))
+
+        # Cross validation
+        scores = cross_val_score(alg, data[predictors], data[target], cv=5, scoring="accuracy", n_jobs=-1)
+        print("Cross Validation: {:0.2f} (+/- {:0.2f}) [{}] ({})".format(abs(scores.mean()), scores.std(), name,
+                                                                         "accuracy"))
+
+        # Feature importances
+        if name == "Random Forest":
+            fi = zip(predictors, alg.feature_importances_)
+            output = sorted(fi, key=lambda x: x[1])
+            print("Feature Importances [" + name + "]")
+            for feature, imp in output:
+                print(feature, imp)
+
+        # Split the data into a training set and a test set
+        X_train, X_test, y_train, y_test = train_test_split(data[predictors], data[target], test_size=1.0 / 5)
+
+        # Print ratio of split
+        print("{:g}/{:g} Split: ".format(100 - 100 / 5, 100 / 5))
+
+        # Create predictions
+        y_pred = alg.fit(X_train, y_train).predict(X_test)
+
+        # Split classification report
+        print("Classification Report [" + name + "]")
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            print(classification_report(y_test, y_pred))
+
+        # Split confusion matrix
+        # Print algorithm name
+        print("Confusion Matrix [" + name + "]")
+
+        # Compute confusion matrix
+        cm = confusion_matrix(y_test, y_pred)
+        np.set_printoptions(precision=2)
+        print("Not Normalized:")
+        print(cm)
+
+        # Normalize the confusion matrix by row (i.e by the number of samples in each class)
+        cm_normalized = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized:")
+        print(cm_normalized)
+
+        # Configure confusion matrix plot
+        def plot_confusion_matrix(cm, title="Confusion matrix", cmap=plt.cm.Blues):
+            plt.imshow(cm, interpolation="nearest", cmap=cmap)
+            plt.title(title)
+            plt.colorbar()
+            tick_marks = np.arange(4)
+            plt.xticks(tick_marks, [0, 1, 2, 3], rotation=45)
+            plt.yticks(tick_marks, [0, 1, 2, 3])
+            plt.tight_layout()
+            plt.ylabel("True label")
+            plt.xlabel("Predicted label")
+
+        # Plot normalized confusion matrix
+        plt.figure()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            plot_confusion_matrix(cm_normalized, title="Normalized Confusion Matrix\n[{}]".format(name))
+
+        # Show confusion matrix plots
+        # plt.show()
 
 
 # Main method
@@ -320,7 +439,7 @@ if __name__ == "__main__":
     #                  "ylabel": "Frequency", "title": "Restaurant Size Frequencies"})
 
     # Run
-    # first_ins_train = training_data(clean, create_file=True)
+    first_ins_train = training_data(clean, create_file=True)
 
     # Number of inspections per restaurant
     # num_inspections = train.groupby(["Restaurant ID"]).agg({"Inspection ID": "count"})["Inspection ID"]
@@ -341,3 +460,12 @@ if __name__ == "__main__":
     # Frequency of violations
     print("\nFREQUENCY OF VIOLATIONS\n")
     print(clean.loc[clean["Violation Status"] == 2, "Violation Code"].value_counts())
+
+    # Prepare target
+    first_ins_train.loc[(first_ins_train["Grade"] == 0) | (first_ins_train["Grade"] == 1), "Grade"] = 0
+    first_ins_train.loc[(first_ins_train["Grade"] == 2) | (first_ins_train["Grade"] == 3), "Grade"] = 1
+
+    # Model
+    modeling(first_ins_train, ["District", "District Group", "Square Footage", "Size", "Risk Category",
+                               "Irregular Hours"], "Grade")
+
