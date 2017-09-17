@@ -252,17 +252,45 @@ def training_data(data, create_file=False):
     # Remove negligible minority of restaurants with null district groups
     data = data[data["District Group"].notnull()]
 
+    # Number of inspections per restaurant
+    num_inspections_data = data.groupby(["Restaurant ID"]).size().reset_index(name='count')
+
+    # New restaurants (those with only a single 916 & non-followup inspection)
+    new_restaurants = num_inspections_data.loc[num_inspections_data["count"] == 1, "Restaurant ID"].unique()
+
+    # New restaurant feature
+    data["New Restaurant"] = 0
+    data.loc[data["Restaurant ID"].isin(new_restaurants), "New Restaurant"] = 1
+
     # Create training data
     if create_file:
         data.to_csv("data/training_data{}.csv".format(datetime.date.today().strftime("_%d_%B_%Y")), index=False)
 
-        # First inspections only
-        first_inspections = data.groupby(["Restaurant ID"]).agg({"Inspection ID": min})["Inspection ID"]
-        data = data[data["Inspection ID"].isin(first_inspections)]
+        # Last (non-followup) inspections only
+        last_inspections = data.groupby(["Restaurant ID"]).agg({"Inspection ID": max})["Inspection ID"]
+        last_inspections_data = data[data["Inspection ID"].isin(last_inspections)]
+
+        # Initialize "prior B or worse" and "prior C or worse" features
+        last_inspections_data["Prior B or Worse"] = 0
+        last_inspections_data["Prior C or Worse"] = 0
+
+        # All prior inspections
+        prior__inspections_data = data[~data["Inspection ID"].isin(last_inspections)]
+
+        # Prior inspections that received B or worse, and C or worse
+        b_or_worse = prior__inspections_data.loc[prior__inspections_data["Grade"] >= 1, "Restaurant ID"].unique()
+        c_or_worse = prior__inspections_data.loc[prior__inspections_data["Grade"] >= 2, "Restaurant ID"].unique()
+
+        # Set prior B/C or worse features
+        last_inspections_data.loc[last_inspections_data["Restaurant ID"].isin(b_or_worse), "Prior B or Worse"] = 1
+        last_inspections_data.loc[last_inspections_data["Restaurant ID"].isin(c_or_worse), "Prior C or Worse"] = 1
 
         # Create CSV
-        data.to_csv("data/training_data_first_inspections_only{}.csv".format(
+        last_inspections_data.to_csv("data/training_data_last_inspections_only{}.csv".format(
                 datetime.date.today().strftime("_%d_%B_%Y")), index=False)
+
+        # Return data
+        return last_inspections_data
 
     # Return data
     return data
@@ -432,14 +460,14 @@ if __name__ == "__main__":
     # Load data
     clean = pd.read_csv("data/clean_data_25_July_2017.csv")
     train = pd.read_csv("data/training_data_21_August_2017.csv")
-    first_ins_train = pd.read_csv("data/training_data_first_inspections_only_21_August_2017.csv")
+    last_ins_train = pd.read_csv("data/training_data_first_inspections_only_21_August_2017.csv")
 
     # Compute histogram on restaurant sizes
     # stats(histogram={"info": [{"data": first_ins_train["Square Footage"]}], "xlabel": "Restaurant Size (Square Ft.)",
     #                  "ylabel": "Frequency", "title": "Restaurant Size Frequencies"})
 
     # Run
-    first_ins_train = training_data(clean, create_file=True)
+    last_ins_train = training_data(clean, create_file=True)
 
     # Number of inspections per restaurant
     # num_inspections = train.groupby(["Restaurant ID"]).agg({"Inspection ID": "count"})["Inspection ID"]
@@ -449,23 +477,36 @@ if __name__ == "__main__":
     #                  "ylabel": "Frequency", "title": "Number of Inspections Per Restaurant"})
 
     print("\nALL RESTAURANTS\n")
-    print(first_ins_train[["Demerit Total", "Grade"]].describe())
+    print(last_ins_train[["Demerit Total", "Grade"]].describe())
 
     print("\nBY SIZE\n")
-    print(first_ins_train.groupby("Size")[["Demerit Total", "Grade"]].describe())
+    print(last_ins_train.groupby("Size")[["Demerit Total", "Grade"]].describe())
 
     print("\nBY DISTRICT\n")
-    print(first_ins_train.groupby("District Group")[["Demerit Total", "Grade"]].describe())
+    print(last_ins_train.groupby("District Group")[["Demerit Total", "Grade"]].describe())
 
     # Frequency of violations
     print("\nFREQUENCY OF VIOLATIONS\n")
     print(clean.loc[clean["Violation Status"] == 2, "Violation Code"].value_counts())
 
+    # Print outcome measure
+    print("\nCLASSIFYING:\nA or B vs. C or Closure")
+
     # Prepare target
-    first_ins_train.loc[(first_ins_train["Grade"] == 0) | (first_ins_train["Grade"] == 1), "Grade"] = 0
-    first_ins_train.loc[(first_ins_train["Grade"] == 2) | (first_ins_train["Grade"] == 3), "Grade"] = 1
+    last_ins_train.loc[(last_ins_train["Grade"] == 0) | (last_ins_train["Grade"] == 1), "Grade1"] = 0
+    last_ins_train.loc[(last_ins_train["Grade"] == 2) | (last_ins_train["Grade"] == 3), "Grade1"] = 1
 
     # Model
-    modeling(first_ins_train, ["District", "District Group", "Square Footage", "Size", "Risk Category",
-                               "Irregular Hours"], "Grade")
+    modeling(last_ins_train, ["District", "District Group", "Square Footage", "Size", "Risk Category",
+                               "Irregular Hours", "New Restaurant", "Prior B or Worse", "Prior C or Worse"], "Grade1")
 
+    # Print outcome measure
+    print("\nCLASSIFYING:\nA vs. B, C, or Closure")
+
+    # Prepare target
+    last_ins_train.loc[(last_ins_train["Grade"] == 0), "Grade2"] = 0
+    last_ins_train.loc[(last_ins_train["Grade"] >= 1), "Grade2"] = 1
+
+    # Model
+    modeling(last_ins_train, ["District", "District Group", "Square Footage", "Size", "Risk Category",
+                              "Irregular Hours", "New Restaurant", "Prior B or Worse", "Prior C or Worse"], "Grade2")
